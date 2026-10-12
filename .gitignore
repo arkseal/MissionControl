@@ -19,3 +19,4 @@ mc_mitm/out/
 *.til
 *.orig
 mc_mitm/source/mcmitm_version.cpp
+build_libnx/
