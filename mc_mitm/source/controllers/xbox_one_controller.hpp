@@ -111,7 +111,7 @@ namespace ams::controller {
         };
     } PACKED;
 
-    class XboxOneController final : public EmulatedSwitchController {
+    class XboxOneController : public EmulatedSwitchController {
 
         public:
             static constexpr const HardwareID hardware_ids[] = {

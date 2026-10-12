@@ -63,8 +63,20 @@ Result btdrvGetHidReportEventInfoFwd(Service* srv, Handle *out_handle) {
 }
 
 Result btdrvInitializeBleFwd(Service* srv, Handle *out_handle) {
-    return serviceMitmDispatch(srv, 46, 
+    return serviceMitmDispatch(srv, 46,
         .out_handle_attrs = { SfOutHandleAttr_HipcCopy },
         .out_handles = out_handle,
     );
+}
+
+Result btdrvStartInquiryFwd(Service* srv, u32 services, s64 duration) {
+    const struct {
+        u32 services;
+        s64 duration;
+    } in = { services, duration };
+    return serviceMitmDispatchIn(srv, 8, in);
+}
+
+Result btdrvStopInquiryFwd(Service* srv) {
+    return serviceMitmDispatch(srv, 9);
 }

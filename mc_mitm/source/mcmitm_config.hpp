@@ -40,6 +40,11 @@ namespace ams::mitm {
             int dualsense_vibration_intensity;
             int dualsense_adaptive_trigger_travel;
         } misc;
+
+        struct {
+            bool enable;
+            bool log;
+        } ble;
     };
 
     void LoadConfiguration();

@@ -9,11 +9,14 @@ VERSION := $(shell printf "0x%02X%02X%02X" $(shell echo "$(GIT_TAG)" | sed -E 's
 BUILD_VERSION := $(GIT_TAG:v%=%)-$(GIT_BRANCH)-$(GIT_HASH)
 BUILD_DATE := $(shell date)
 
+GIT_HEAD := $(shell git rev-parse --git-path HEAD)
+GIT_INDEX := $(shell git rev-parse --git-path index)
+
 TARGETS := mcmitm_version.cpp mc_mitm
 
 all: $(TARGETS)
 
-mcmitm_version.cpp: .git/HEAD .git/index
+mcmitm_version.cpp: $(GIT_HEAD) $(GIT_INDEX)
 	echo "namespace ams::mc { unsigned int mc_version = $(VERSION); const char *mc_build_name = \"$(BUILD_VERSION)\"; const char *mc_build_date = \"$(BUILD_DATE)\"; }" > mc_mitm/source/$@
 
 mc_mitm:

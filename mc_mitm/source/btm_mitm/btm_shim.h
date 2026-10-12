@@ -20,6 +20,7 @@
 extern "C" {
 #endif
 
+Result btmAcquireDeviceConditionEventFwd(Service* s, Handle *out_handle);
 Result btmGetDeviceConditionFwd(Service* s, BtmProfile profile, BtmDeviceCondition *device_condition, size_t count, s32 *total_out);
 Result btmGetDeviceInfoFwd(Service* s, BtmProfile profile, BtmDeviceInfo *device_info, size_t count, s32 *total_out);
 Result btmGetShortenedDeviceInfoFwd(Service* s, BtmProfile profile, BtmShortenedDeviceInfo *device_info, size_t count, s32 *total_out);
