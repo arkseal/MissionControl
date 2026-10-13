@@ -15,6 +15,9 @@
  */
 #include "ble_events.hpp"
 #include "ble_log.hpp"
+#include "ble_profile.hpp"
+#include "../mcmitm_config.hpp"
+#include <atomic>
 
 namespace ams::ble::events {
 
@@ -47,6 +50,7 @@ namespace ams::ble::events {
         constinit bool g_have_target = false;
         constinit bluetooth::Address g_target = {};
         constinit u32 g_conn_id = InvalidConnId;
+        constinit std::atomic<u32> g_conn_id_fast = InvalidConnId;
         constinit bool g_disconnected = false;
         constinit u16 g_disconnect_reason = 0;
         constinit u32 g_gatt_results = 0;
@@ -144,6 +148,32 @@ namespace ams::ble::events {
                 g_adopted_address = connection.address;
                 g_adopted_conn_id = connection.conn_id;
             }
+        }
+
+        if (type == BtdrvBleEventType_PreferredConnectionParameters) {
+            auto &pref = info->preferred_connection_parameters;
+            log::Write("evt PreferredConnectionParameters conn_id=%u min=%u (%.2fms) max=%u (%.2fms) latency=%u timeout=%ums",
+                pref.conn_id, pref.min_conn_interval, pref.min_conn_interval * 1.25f,
+                pref.max_conn_interval, pref.max_conn_interval * 1.25f,
+                pref.slave_latency, static_cast<u32>(pref.supervision_tout * 10));
+
+            if (mitm::GetGlobalConfig()->ble.low_latency && g_have_target) {
+                BtdrvBleConnectionParameter param = {
+                    .min_conn_interval = std::max<u16>(6, pref.min_conn_interval),
+                    .max_conn_interval = std::max<u16>(pref.min_conn_interval, std::min<u16>(9, pref.max_conn_interval)),
+                    .min_ce_length     = 0,
+                    .max_ce_length     = 0,
+                    .slave_latency     = 0,
+                    .supervision_tout  = pref.supervision_tout ? pref.supervision_tout : static_cast<u16>(300),
+                };
+                Result rc = btdrvSetBleConnectionParameter(g_target, &param, false);
+                log::Write("btdrvSetBleConnectionParameter(preferred) rc=0x%x", rc.GetValue());
+            }
+        }
+
+        if (type == BtdrvBleEventType_ConnectionUpdate) {
+            auto &cu = info->connection_update;
+            profile::RecordConnectionUpdate(cu.conn_interval, cu.conn_latency, cu.supervision_tout);
         }
 
         const size_t next = (g_ring_write + 1) % RingSize;
@@ -265,6 +295,7 @@ namespace ams::ble::events {
     void SetConnection(u32 conn_id) {
         std::scoped_lock lk(g_lock);
         g_conn_id = conn_id;
+        g_conn_id_fast.store(conn_id, std::memory_order_relaxed);
         g_disconnected = false;
     }
 
@@ -307,6 +338,10 @@ namespace ams::ble::events {
         return g_conn_id;
     }
 
+    u32 GetConnectionFast() noexcept {
+        return g_conn_id_fast.load(std::memory_order_relaxed);
+    }
+
     bool IsDisconnected() {
         std::scoped_lock lk(g_lock);
         return g_disconnected;
@@ -330,6 +365,7 @@ namespace ams::ble::events {
         g_target = g_adopted_address;
         g_have_target = true;
         g_conn_id = g_adopted_conn_id;
+        g_conn_id_fast.store(g_adopted_conn_id, std::memory_order_relaxed);
         g_disconnected = false;
         return true;
     }
@@ -454,7 +490,20 @@ namespace ams::ble::events {
                 log::Write("evt ClientRegistration result=%u client_if=%u status=%u", info.client_registration.result, info.client_registration.client_if, info.client_registration.status);
                 break;
             case BtdrvBleEventType_ConnectionUpdate:
-                log::Write("evt ConnectionUpdate result=%u conn_id=%u interval=%u latency=%u timeout=%u", info.connection_update.result, info.connection_update.conn_id, info.connection_update.conn_interval, info.connection_update.conn_latency, info.connection_update.supervision_tout);
+                log::Write("evt ConnectionUpdate result=%u conn_id=%u interval=%.2fms (%u) latency=%u timeout=%ums",
+                    info.connection_update.result, info.connection_update.conn_id,
+                    info.connection_update.conn_interval * 1.25f, info.connection_update.conn_interval,
+                    info.connection_update.conn_latency, static_cast<u32>(info.connection_update.supervision_tout * 10));
+                break;
+            case BtdrvBleEventType_PreferredConnectionParameters:
+                log::Write("evt PreferredConnectionParameters conn_id=%u min=%u (%.2fms) max=%u (%.2fms) latency=%u timeout=%ums",
+                    info.preferred_connection_parameters.conn_id,
+                    info.preferred_connection_parameters.min_conn_interval,
+                    info.preferred_connection_parameters.min_conn_interval * 1.25f,
+                    info.preferred_connection_parameters.max_conn_interval,
+                    info.preferred_connection_parameters.max_conn_interval * 1.25f,
+                    info.preferred_connection_parameters.slave_latency,
+                    static_cast<u32>(info.preferred_connection_parameters.supervision_tout * 10));
                 break;
             case BtdrvBleEventType_ClientConnection:
                 log::Write("evt ClientConnection result=%u status=%u client_if=%u conn_id=%u reason=0x%04x", info.client_connection.result, info.client_connection.status, info.client_connection.client_if, info.client_connection.conn_id, info.client_connection.reason);
@@ -492,6 +541,24 @@ namespace ams::ble::events {
         if (e.forwarded && IsConnectionFamily(e.type)) {
             log::Write("  (forwarded to btm)");
         }
+    }
+
+    void RequestLowLatencyConnectionParameters(const bluetooth::Address &address) {
+        if (!mitm::GetGlobalConfig()->ble.low_latency) {
+            return;
+        }
+
+        BtdrvBleConnectionParameter param = {
+            .min_conn_interval = 6,   // 7.5 ms
+            .max_conn_interval = 9,   // 11.25 ms
+            .min_ce_length     = 0,
+            .max_ce_length     = 0,
+            .slave_latency     = 0,   // no skipped polling intervals
+            .supervision_tout  = 300, // 3000 ms
+        };
+
+        Result rc = btdrvSetBleConnectionParameter(address, &param, false);
+        log::Write("btdrvSetBleConnectionParameter(low_latency) rc=0x%x", rc.GetValue());
     }
 
 }

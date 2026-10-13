@@ -17,6 +17,7 @@
 #include "ble_events.hpp"
 #include "ble_gatt.hpp"
 #include "ble_log.hpp"
+#include "ble_profile.hpp"
 #include "ble_results.hpp"
 #include "../mcmitm_config.hpp"
 #include "../mcmitm_initialization.hpp"
@@ -121,7 +122,7 @@ namespace ams::ble {
                 }
 
                 auto &notify = g_le_hid_record.info.client_notify;
-                if ((g_le_hid_record.type != BtdrvBleEventType_ClientNotify) || (notify.conn_id != events::GetConnection())) {
+                if ((g_le_hid_record.type != BtdrvBleEventType_ClientNotify) || (notify.conn_id != events::GetConnectionFast())) {
                     events::Log(g_le_hid_record);
                     continue;
                 }
@@ -133,7 +134,9 @@ namespace ams::ble {
                         controller = g_controller;
                     }
                     if (controller) {
+                        const u64 start_tick = profile::RecordReportStart();
                         static_cast<void>(controller->HandleInputReport(notify.data, std::min<size_t>(notify.size, sizeof(notify.data))));
+                        profile::RecordReportEnd(start_tick);
                     }
                 } else {
                     events::NoteGattResult(notify.result);
@@ -142,13 +145,17 @@ namespace ams::ble {
             }
         }
 
+        constexpr s32 LowLatencyThreadPriority = -11; // Matches mc::HidReportThread & bluetooth.nso
+        constexpr s32 DefaultThreadPriority = 9;
+
         void StartLeHidListener() {
+            const s32 priority = mitm::GetGlobalConfig()->ble.low_latency ? LowLatencyThreadPriority : DefaultThreadPriority;
             R_ABORT_UNLESS(os::CreateThread(&g_le_hid_thread,
                 LeHidThreadFunc,
                 nullptr,
                 g_le_hid_thread_stack,
                 LeHidThreadStackSize,
-                ThreadPriority
+                priority
             ));
 
             os::SetThreadNamePointer(&g_le_hid_thread, "mc::BleHidEventThread");
@@ -183,6 +190,19 @@ namespace ams::ble {
             Result rc = btdrvEnableBle();
             log::Write("btdrvEnableBle rc=0x%x", rc.GetValue());
             events::Pump(TimeSpan::FromSeconds(6));
+
+            if (mitm::GetGlobalConfig()->ble.low_latency) {
+                BtdrvBleConnectionParameter default_param = {
+                    .min_conn_interval = 6,   // 7.5 ms
+                    .max_conn_interval = 9,   // 11.25 ms
+                    .min_ce_length     = 0,
+                    .max_ce_length     = 0,
+                    .slave_latency     = 0,
+                    .supervision_tout  = 300, // 3000 ms
+                };
+                rc = btdrvSetBleDefaultConnectionParameter(&default_param);
+                log::Write("btdrvSetBleDefaultConnectionParameter rc=0x%x", rc.GetValue());
+            }
 
             // btm's registrations take most of the stack's client slots; borrow the last one rather than risk
             // finding none free
@@ -381,6 +401,8 @@ namespace ams::ble {
             u8 neutral[sizeof(controller::XboxOneInputReport0x01)] = { 0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80 };
             static_cast<void>(controller->HandleInputReport(neutral, sizeof(neutral)));
 
+            events::RequestLowLatencyConnectionParameters(address);
+
             log::Write("controller presented to the system");
         }
 
@@ -393,6 +415,7 @@ namespace ams::ble {
             }
 
             if (controller) {
+                profile::FlushNow();
                 controller::DetachVirtualController(address);
                 log::Write("controller removed from the system");
             }
@@ -422,6 +445,7 @@ namespace ams::ble {
         void RunConnected(u32 conn_id) {
             for (;;) {
                 events::Pump(TimeSpan::FromSeconds(1));
+                profile::FlushIfDue();
 
                 if (gatt::TakeRediscovered()) {
                     log::Write("services re-discovered, subscribing again");
@@ -539,6 +563,9 @@ namespace ams::ble {
         auto config = mitm::GetGlobalConfig();
         if (config->ble.log) {
             log::Initialize();
+        }
+        if (config->ble.profile) {
+            profile::Initialize();
         }
         events::Activate();
 

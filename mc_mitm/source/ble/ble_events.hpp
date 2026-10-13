@@ -41,8 +41,10 @@ namespace ams::ble::events {
     bool GetTarget(bluetooth::Address *out);
     void SetConnection(u32 conn_id);
     u32 GetConnection();
+    u32 GetConnectionFast() noexcept;
     bool IsDisconnected();
     u16 GetDisconnectReason();
+    void RequestLowLatencyConnectionParameters(const bluetooth::Address &address);
 
     // Results of our GATT requests arrive on the LE HID stream; the host thread reports each one here so a
     // request is not issued while the previous one is still pending

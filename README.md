@@ -110,7 +110,10 @@ To pair, open *Controllers → Change Grip/Order* and hold the controller's sync
 * The controller does not remember the console, and only one controller can be paired per console restart. Once a controller has been switched off, pairing it again is refused until the console is restarted. The console's stack only supports LE legacy pairing, and these controllers keep a bond only from LE Secure Connections pairing; no Secure Connections support was found in the console's Bluetooth module, so this cannot be changed from Mission Control.
 * Switch the controller off before putting the console to sleep. A controller left switched on wakes the console up again a few seconds later.
 
-The `[ble]` section also offers a `log` option that writes what the BLE host is doing to `/config/MissionControl/ble.log`, which is useful when reporting problems.
+The `[ble]` section also offers additional options:
+* `low_latency`: Requests low-latency BLE connection parameters (7.5 ms – 11.25 ms interval, 0 slave latency) and boosts the LE HID event thread priority to real-time (-11) to eliminate input lag [default false].
+* `profile`: Writes live performance timing metrics (packet arrival cadence, processing time in microseconds, and active BLE connection interval) to `/config/MissionControl/ble_profile.txt` every 5 seconds without introducing I/O lag [default false].
+* `log`: Writes verbose Bluetooth LE stack events to `/config/MissionControl/ble.log` [default false].
 
 Once connected, your controller's buttons are mapped as closely as possible to the physical layout of a Switch Pro Controller. This means that A/B and X/Y buttons will be swapped for controllers that use an Xbox style button layout rather than using what is printed on the button. The button combos `MINUS + DPAD_UP` and `MINUS + DPAD_DOWN` are provided for all controllers to function as an alternative for `CAPTURE` and `HOME` buttons in cases where there are not enough face buttons available. Button mappings can be changed from the official system menu at `System Settings->Controllers and Sensors->Change Button Mapping`.
 

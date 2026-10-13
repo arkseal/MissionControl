@@ -42,7 +42,9 @@ namespace ams::mitm {
             },
             .ble = {
                 .enable = false,
-                .log = false
+                .log = false,
+                .low_latency = false,
+                .profile = false
             }
         };
 
@@ -123,6 +125,10 @@ namespace ams::mitm {
                     ParseBoolean(value, &config->ble.enable);
                 } else if (strcasecmp(name, "log") == 0) {
                     ParseBoolean(value, &config->ble.log);
+                } else if (strcasecmp(name, "low_latency") == 0) {
+                    ParseBoolean(value, &config->ble.low_latency);
+                } else if (strcasecmp(name, "profile") == 0) {
+                    ParseBoolean(value, &config->ble.profile);
                 }
             } else {
                 return 0;

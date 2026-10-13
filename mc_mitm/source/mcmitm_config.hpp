@@ -44,6 +44,8 @@ namespace ams::mitm {
         struct {
             bool enable;
             bool log;
+            bool low_latency;
+            bool profile;
         } ble;
     };
 
